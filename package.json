@@ -1,0 +1,21 @@
+{
+    "name": "Spotify-Lyrics-API",
+    "version": "1.0.0",
+    "description": "Unofficial API to fetch Spotify **Lyrics data** in LRC or SRT format.",
+    "type": "module",
+    "main": "index.js",
+    "keywords": [
+        "spotify",
+        "canvas",
+        "api"
+    ],
+    "author": "Paxsenix0",
+    "license": "MIT",
+    "dependencies": {
+        "axios": "^1.6.0",
+        "express": "latest",
+        "otpauth": "latest",
+        "dotenv": "latest",
+        "cors": "latest"
+    }
+}
