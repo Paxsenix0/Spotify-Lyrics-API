@@ -1,17 +1,20 @@
 import axios from "axios";
 import * as OTPAuth from "otpauth";
 import dotenv from "dotenv";
+import fs from "fs/promises";
+import path from "path";
 
 dotenv.config();
 
 const SP_DC = process.env.SP_DC;
 const SECRETS_URL = "https://raw.githubusercontent.com/Thereallo1026/spotify-secrets/refs/heads/main/secrets/secretDict.json";
+const LOCAL_SECRETS_FILE = "/tmp/spotify_secrets.json";
 
 // Global variables to store the current TOTP configuration
 let currentTotp = null;
 let currentTotpVersion = null;
 let lastFetchTime = 0;
-const FETCH_INTERVAL = 60 * 60 * 1000; // 1 hour in milliseconds
+const FETCH_INTERVAL = 60 * 60 * 1000; // 1 hour
 
 // Initialize TOTP secrets on startup
 initializeTOTPSecrets();
@@ -21,6 +24,29 @@ setInterval(updateTOTPSecrets, FETCH_INTERVAL);
 
 async function initializeTOTPSecrets() {
   try {
+    // First try to load from local file
+    const localSecrets = await loadSecretsFromFile();
+    if (localSecrets) {
+      console.log('Loaded TOTP secrets from local file');
+      const newestVersion = findNewestVersion(localSecrets.secrets);
+      if (newestVersion) {
+        const secretData = localSecrets.secrets[newestVersion];
+        const totpSecret = createTotpSecret(secretData);
+        
+        currentTotp = new OTPAuth.TOTP({
+          period: 30,
+          digits: 6,
+          algorithm: "SHA1",
+          secret: totpSecret
+        });
+        
+        currentTotpVersion = newestVersion;
+        lastFetchTime = localSecrets.fetchTime || 0;
+        console.log(`Using local TOTP secrets version ${newestVersion}`);
+      }
+    }
+    
+    // Then try to update from remote
     await updateTOTPSecrets();
   } catch (error) {
     console.error('Failed to initialize TOTP secrets:', error);
@@ -29,11 +55,52 @@ async function initializeTOTPSecrets() {
   }
 }
 
+async function loadSecretsFromFile() {
+  try {
+    const fileContent = await fs.readFile(LOCAL_SECRETS_FILE, 'utf8');
+    const data = JSON.parse(fileContent);
+    
+    // Check if the file is not too old (more than 24 hours)
+    const now = Date.now();
+    if (data.fetchTime && (now - data.fetchTime) > (24 * 60 * 60 * 1000)) {
+      console.log('Local secrets file is too old, will fetch fresh data');
+      return null;
+    }
+    
+    return data;
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      console.log('No local secrets file found');
+    } else {
+      console.error('Error reading local secrets file:', error.message);
+    }
+    return null;
+  }
+}
+
+async function saveSecretsToFile(secrets) {
+  try {
+    const data = {
+      secrets: secrets,
+      fetchTime: Date.now(),
+      version: findNewestVersion(secrets)
+    };
+    
+    await fs.writeFile(LOCAL_SECRETS_FILE, JSON.stringify(data, null, 2), 'utf8');
+    
+    await fs.chmod(LOCAL_SECRETS_FILE, 0o600);
+    
+    console.log(`Secrets saved to ${LOCAL_SECRETS_FILE}`);
+  } catch (error) {
+    console.error('Failed to save secrets to file:', error.message);
+  }
+}
+
 async function updateTOTPSecrets() {
   try {
     const now = Date.now();
     if (now - lastFetchTime < FETCH_INTERVAL) {
-      return; // Don't fetch too frequently
+      return;
     }
 
     console.log('Fetching updated TOTP secrets...');
@@ -53,9 +120,18 @@ async function updateTOTPSecrets() {
       
       currentTotpVersion = newestVersion;
       lastFetchTime = now;
+      
+      // Save the new secrets to local file
+      await saveSecretsToFile(secrets);
+      
       console.log(`TOTP secrets updated to version ${newestVersion}`);
     } else {
       console.log(`No new TOTP secrets found, using version ${newestVersion}`);
+      
+      // Save to file even if no new version (to update fetchTime)
+      if (secrets) {
+        await saveSecretsToFile(secrets);
+      }
     }
   } catch (error) {
     console.error('Failed to update TOTP secrets:', error);
@@ -174,4 +250,15 @@ function generateTOTP(timestamp) {
 
 function userAgent() {
   return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36";
+}
+
+export async function clearLocalSecrets() {
+  try {
+    await fs.unlink(LOCAL_SECRETS_FILE);
+    console.log('Local secrets file cleared');
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.error('Error clearing local secrets file:', error.message);
+    }
+  }
 }
