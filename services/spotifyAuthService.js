@@ -7,7 +7,7 @@ import path from "path";
 dotenv.config();
 
 const SP_DC = process.env.SP_DC;
-const SECRETS_URL = "https://raw.githubusercontent.com/Paxsenix0/something-useless-cuz-of-sp/refs/heads/main/secrets/secretDict.json";
+const SECRETS_URL = "https://raw.githubusercontent.com/xyloflake/spot-secrets-go/refs/heads/main/secrets/secretDict.json";
 const LOCAL_SECRETS_FILE = "/tmp/spotify_secrets.json";
 
 // Global variables to store the current TOTP configuration
